@@ -1,6 +1,6 @@
 use chrono::prelude::*;
 use clap::{App, Arg};
-use std::convert::TryInto;
+use std::convert::TryFrom;
 use std::time::Duration;
 use ublox::*;
 
@@ -53,6 +53,7 @@ impl Device {
         while !found_packet {
             self.update(|packet| {
                 if let PacketRef::AckAck(ack) = packet {
+                    println!("Ack {:02x} {:02x}", ack.class(), ack.msg_id());
                     if ack.class() == T::CLASS && ack.msg_id() == T::ID {
                         found_packet = true;
                     }
@@ -115,6 +116,7 @@ fn main() {
     let port = serialport::open_with_settings(port, &s).unwrap();
     let mut device = Device::new(port);
 
+    println!("Configure UART");
     // Configure the device to talk UBX
     device
         .write_all(
@@ -134,6 +136,46 @@ fn main() {
         .unwrap();
     device.wait_for_ack::<CfgPrtUart>().unwrap();
 
+    /*
+    println!("Configure power mode");
+    // Enable power save mode
+    device
+        .write_all(
+            &CfgPowerModeSetupBuilder::setup_interval(
+                chrono::Duration::seconds(20),
+                chrono::Duration::seconds(10),
+            )
+            .into_packet_bytes(),
+        )
+        .unwrap();
+    device.wait_for_ack::<CfgPowerModeSetup>().unwrap();
+
+    println!("Configure power save");
+    // Enable power save mode
+    device
+        .write_all(
+            &CfgRxmBuilder {
+                reserved: 0,
+                low_power_mode: LowPowerMode::PowerSave,
+            }
+            .into_packet_bytes(),
+        )
+        .unwrap();
+    device.wait_for_ack::<CfgRxm>().unwrap();
+    */
+
+    /*
+    println!("Configure power save duration");
+    // Configure power save duration
+    device
+        .write_all(
+            &RxmPowerManagementRequestBuilder::new(chrono::Duration::seconds(20))
+                .into_packet_bytes(),
+        )
+        .unwrap();
+    */
+
+    println!("Enable navigation packet(s)");
     // Enable the NavPosVelTime packet
     device
         .write_all(
@@ -159,7 +201,9 @@ fn main() {
                         packet.software_version(),
                         packet.hardware_version()
                     );
-                    println!("{:?}", packet);
+                    for extension in packet.extension() {
+                        println!("Extension {}", extension);
+                    }
                 }
                 PacketRef::NavPosVelTime(sol) => {
                     let has_time = sol.fix_type() == GpsFix::Fix3D
@@ -179,12 +223,11 @@ fn main() {
                             "Speed: {:.2} m/s Heading: {:.2} degrees",
                             vel.speed, vel.heading
                         );
-                        println!("Sol: {:?}", sol);
                     }
-
                     if has_time {
-                        let time: DateTime<Utc> = (&sol).try_into().unwrap();
-                        println!("Time: {:?}", time);
+                        if let Ok(date_time) = DateTime::<Utc>::try_from(&sol) {
+                            println!("Time: {:?}", date_time);
+                        }
                     }
                 }
                 _ => {

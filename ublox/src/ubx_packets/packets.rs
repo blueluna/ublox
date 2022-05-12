@@ -431,7 +431,7 @@ impl NavSatSvFlags {
         match bits {
             1 => NavSatSvHealth::Healthy,
             2 => NavSatSvHealth::Unhealthy,
-            x => NavSatSvHealth::Unknown(x as u8)
+            x => NavSatSvHealth::Unknown(x as u8),
         }
     }
 
@@ -510,7 +510,10 @@ impl fmt::Debug for NavSatSvFlags {
             .field("quality_ind", &self.quality_ind())
             .field("sv_used", &self.sv_used())
             .field("health", &self.health())
-            .field("differential_correction_available", &self.differential_correction_available())
+            .field(
+                "differential_correction_available",
+                &self.differential_correction_available(),
+            )
             .field("smoothed", &self.smoothed())
             .field("orbit_source", &self.orbit_source())
             .field("ephemeris_available", &self.ephemeris_available())
@@ -593,7 +596,7 @@ impl<'a> core::iter::Iterator for NavSatIter<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.offset < self.data.len() {
-            let data = &self.data[self.offset..self.offset+12];
+            let data = &self.data[self.offset..self.offset + 12];
             self.offset += 12;
             Some(NavSatSvInfoRef(data))
         } else {
@@ -604,8 +607,7 @@ impl<'a> core::iter::Iterator for NavSatIter<'a> {
 
 impl fmt::Debug for NavSatIter<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("NavSatIter")
-            .finish()
+        f.debug_struct("NavSatIter").finish()
     }
 }
 
@@ -623,11 +625,11 @@ struct NavSat {
     reserved: u16,
 
     #[ubx(map_type = NavSatIter,
-        may_fail,
-        is_valid = navsat::is_valid,
-        from = navsat::convert_to_iter,
-        get_as_ref)]
-    svs: [u8; 0]
+    may_fail,
+    is_valid = navsat::is_valid,
+    from = navsat::convert_to_iter,
+    get_as_ref)]
+    svs: [u8; 0],
 }
 
 mod navsat {
@@ -660,11 +662,16 @@ struct NavOdo {
 /// Reset odometer
 #[ubx_packet_send]
 #[ubx(class = 0x01, id = 0x10, fixed_payload_len = 0)]
-struct NavResetOdo { }
+struct NavResetOdo {}
 
 /// Configure odometer
 #[ubx_packet_recv_send]
-#[ubx(class = 0x06, id = 0x1E, fixed_payload_len = 20, flags = "default_for_builder")]
+#[ubx(
+    class = 0x06,
+    id = 0x1E,
+    fixed_payload_len = 20,
+    flags = "default_for_builder"
+)]
 struct CfgOdo {
     version: u8,
     reserved: [u8; 3],
@@ -769,7 +776,7 @@ struct InfError{
         is_valid = inf::is_valid,
         from = inf::convert_to_str,
         get_as_ref)]
-    message: [u8; 0]
+    message: [u8; 0],
 }
 
 #[ubx_packet_recv]
@@ -785,7 +792,7 @@ struct InfNotice{
         is_valid = inf::is_valid,
         from = inf::convert_to_str,
         get_as_ref)]
-    message: [u8; 0]
+    message: [u8; 0],
 }
 
 #[ubx_packet_recv]
@@ -836,9 +843,8 @@ struct InfDebug{
     message: [u8; 0]
 }
 
-
 mod inf {
-	pub(crate) fn convert_to_str(bytes: &[u8]) -> Option<&str> {
+    pub(crate) fn convert_to_str(bytes: &[u8]) -> Option<&str> {
         match core::str::from_utf8(bytes) {
             Ok(msg) => Some(msg),
             Err(_) => None,
@@ -1783,6 +1789,181 @@ bitflags! {
     }
 }
 
+/// Receiver manager configuration
+#[ubx_packet_recv_send]
+#[ubx(class = 0x06, id = 0x11, fixed_payload_len = 2)]
+struct CfgRxm {
+    /// Reserved
+    reserved: u8,
+
+    /// Low power mode
+    #[ubx(map_type = LowPowerMode)]
+    low_power_mode: u8,
+}
+
+#[ubx_extend]
+#[ubx(from, into_raw, rest_reserved)]
+#[repr(u8)]
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub enum LowPowerMode {
+    /// Continuous, not low power, mode
+    Continuous = 0,
+    /// Power save mode
+    PowerSave = 1,
+    /// Continuous, not low power, mode
+    Continuous2 = 4,
+}
+
+/// Power mode configuration
+#[ubx_packet_recv_send]
+#[ubx(class = 0x06, id = 0x3b, fixed_payload_len = 44)]
+struct CfgExtendedPowerManagement {
+    /// Version, 0x00
+    version: u8,
+    reserved1: u8,
+    /// Maximum time to spend in acquisition state, in seconds.
+    max_startup_state_duration: u8,
+    reserved2: u8,
+    /// Flags
+    #[ubx(map_type = CfgExtendedPowerManagementFlags)]
+    flags: u32,
+    /// Position update period in milliseconds
+    update_period: u32,
+    /// Acquisition retry period in milliseconds
+    search_period: u32,
+    /// Grid offset relative to GPS start of week in milliseconds
+    grid_offset: u32,
+    /// Time spent in tracking state in seconds
+    on_time: u16,
+    /// Minimal search time in seconds
+    minimal_acquisition_time: u16,
+    reserved3: [u8; 20],
+}
+
+#[ubx_extend_bitflags]
+#[ubx(from, into_raw, rest_reserved)]
+bitflags! {
+    /// `RxmPowerManagementRequest` flags
+    #[derive(Default)]
+    pub struct CfgExtendedPowerManagementFlags: u32 {
+        /// Select EXTINT1 as source pin, otherwise EXTINT0
+        const SELECT_EXTINT1 = 0b0000_0000_0000_0001_0000u32;
+        /// If enabled keep receiver awake as long EXTINT pin is high
+        const EXTINT_WAKEUP_ENABLE = 0b0000_0000_0000_0010_0000u32;
+        /// If enabled force receiver into backup mode  as long EXTINT pin is low
+        const EXTINT_BACKUP_ENABLE = 0b0000_0000_0000_0100_0000u32;
+        /// If enabled, limit peak current
+        const LIMIT_PEAK_CURRENT = 0b0000_0000_0001_0000_0000u32;
+        /// If enabled, wait for time fix before starting on time, otherwise wait for normal fix
+        const WAIT_FOR_TIME_FIX = 0b0000_0000_0100_0000_0000u32;
+        /// Update RTC during wake up
+        const UPDATE_RTC = 0b0000_0000_1000_0000_0000u32;
+        /// Update ephemeris during wake up
+        const UPDATE_EPHEMERIS = 0b0000_0001_0000_0000_0000u32;
+        /// Keep trying to acquire fix, do not hibernate
+        const KEEP_TRYING_ACQUIRE = 0b0001_0000_0000_0000_0000u32;
+        /// Cyclic tracking operation (PSMCT), otherwise ON/OFF operation (PSMOO) will be used
+        const CYCLIC_TRACKING_OPERATION_MODE = 0b0010_0000_0000_0000_0000u32;
+    }
+}
+
+/// Power mode configuration
+#[ubx_packet_recv_send]
+#[ubx(class = 0x06, id = 0x86, fixed_payload_len = 8)]
+struct CfgPowerModeSetup {
+    /// Version, 0x00
+    version: u8,
+    /// Power mode
+    #[ubx(map_type = PowerModeSetup)]
+    mode: u8,
+    /// Period time in seconds in interval mode
+    period_seconds: u16,
+    /// On duration time in seconds in interval mode
+    on_duration_seconds: u16,
+    reserved: [u8; 2],
+}
+
+impl CfgPowerModeSetupBuilder {
+    pub fn setup_interval(period: chrono::Duration, on_duration: chrono::Duration) -> Self {
+        let period_s = period.num_seconds().abs() as u16;
+        let on_duration_s = on_duration.num_seconds().abs() as u16;
+        Self {
+            version: 0,
+            mode: PowerModeSetup::Interval,
+            period_seconds: period_s,
+            on_duration_seconds: on_duration_s,
+            reserved: [0u8; 2],
+        }
+    }
+
+    pub fn setup_mode(mode: PowerModeSetup) -> Self {
+        Self {
+            version: 0,
+            mode,
+            period_seconds: 0,
+            on_duration_seconds: 0,
+            reserved: [0u8; 2],
+        }
+    }
+}
+
+#[ubx_extend]
+#[ubx(from, into_raw, rest_reserved)]
+#[repr(u8)]
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub enum PowerModeSetup {
+    FullPower = 0x00,
+    Balanced = 0x01,
+    Interval = 0x02,
+    AggressiveWith1Hz = 0x03,
+    AggressiveWith2Hz = 0x04,
+    AggressiveWith4Hz = 0x05,
+    Invalid = 0xff,
+}
+
+/// Receiver manager power management request
+#[ubx_packet_recv_send]
+#[ubx(class = 0x02, id = 0x41, fixed_payload_len = 8)]
+struct RxmPowerManagementRequest {
+    /// Duration in milliseconds
+    duration: u32,
+
+    /// Low power mode
+    #[ubx(map_type = RxmPowerManagementRequestFlags)]
+    flags: u32,
+}
+
+impl RxmPowerManagementRequestBuilder {
+    /// Create a receiver manager power management request from a duration.
+    /// Truncating the duration to the maximum duration.
+    pub fn new(duration: chrono::Duration) -> Self {
+        // Max duration, twelve days
+        const DURATION_MILLISECONDS_MAX: u32 = 12 * 24 * 60 * 60 * 1000;
+        let duration_ms = duration.num_milliseconds().abs();
+        let duration_ms = if duration_ms > i64::from(DURATION_MILLISECONDS_MAX) {
+            DURATION_MILLISECONDS_MAX
+        } else {
+            duration_ms as u32
+        };
+        Self {
+            duration: duration_ms,
+            flags: RxmPowerManagementRequestFlags::from(0),
+        }
+    }
+}
+
+#[ubx_extend_bitflags]
+#[ubx(from, into_raw, rest_reserved)]
+bitflags! {
+    /// `RxmPowerManagementRequest` flags
+    #[derive(Default)]
+    pub struct RxmPowerManagementRequestFlags: u32 {
+        /// The receiver goes into backup mode for a time period defined by duration,
+        /// provided that it is not connected to USB
+        const BACKUP = 0x00_00_00_02;
+    }
+}
+
 /// GNSS Assistance ACK UBX-MGA-ACK
 #[ubx_packet_recv]
 #[ubx(class = 0x13, id = 0x60, fixed_payload_len = 8)]
@@ -1802,7 +1983,7 @@ struct MgaAck {
     msg_id: u8,
 
     /// The first 4 bytes of the acknowledged message's payload
-    msg_payload_start: [u8; 4]
+    msg_payload_start: [u8; 4],
 }
 
 #[ubx_extend]
@@ -1814,7 +1995,7 @@ pub enum MsgAckInfoCode {
     RejectedNoTime = 1,
     RejectedBadVersion = 2,
     RejectedBadSize = 3,
-    RejectedDBStoreFailed= 4,
+    RejectedDBStoreFailed = 4,
     RejectedNotReady = 5,
     RejectedUnknownType = 6,
 }
@@ -1876,7 +2057,7 @@ impl<'a> core::iter::Iterator for MonVerExtensionIter<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.offset < self.data.len() {
-            let data = &self.data[self.offset..self.offset+30];
+            let data = &self.data[self.offset..self.offset + 30];
             self.offset += 30;
             Some(mon_ver::convert_to_str_unchecked(data))
         } else {
@@ -1887,8 +2068,7 @@ impl<'a> core::iter::Iterator for MonVerExtensionIter<'a> {
 
 impl fmt::Debug for MonVerExtensionIter<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("MonVerExtensionIter")
-            .finish()
+        f.debug_struct("MonVerExtensionIter").finish()
     }
 }
 
@@ -1896,17 +2076,17 @@ impl fmt::Debug for MonVerExtensionIter<'_> {
 #[ubx_packet_recv]
 #[ubx(class = 0x0a, id = 0x04, max_payload_len = 1240)]
 struct MonVer {
-    #[ubx(map_type = &str, may_fail, from = mon_ver::convert_to_str_unchecked,
-          is_valid = mon_ver::is_cstr_valid, get_as_ref)]
+    #[ubx(map_type = & str, may_fail, from = mon_ver::convert_to_str_unchecked,
+    is_valid = mon_ver::is_cstr_valid, get_as_ref)]
     software_version: [u8; 30],
-    #[ubx(map_type = &str, may_fail, from = mon_ver::convert_to_str_unchecked,
-          is_valid = mon_ver::is_cstr_valid, get_as_ref)]
+    #[ubx(map_type = & str, may_fail, from = mon_ver::convert_to_str_unchecked,
+    is_valid = mon_ver::is_cstr_valid, get_as_ref)]
     hardware_version: [u8; 10],
 
     /// Extended software information strings
     #[ubx(map_type = MonVerExtensionIter, may_fail,
-          from = mon_ver::extension_to_iter,
-          is_valid = mon_ver::is_extension_valid)]
+    from = mon_ver::extension_to_iter,
+    is_valid = mon_ver::is_extension_valid)]
     extension: [u8; 0],
 }
 
@@ -1981,10 +2161,12 @@ define_recv_packets!(
         AckAck,
         AckNak,
         CfgPrtI2c,
+        CfgAnt,
         CfgPrtSpi,
         CfgPrtUart,
         CfgNav5,
-        CfgAnt,
+        CfgPowerModeSetup,
+        CfgRxm,
         InfError,
         InfWarning,
         InfNotice,
@@ -1992,6 +2174,7 @@ define_recv_packets!(
         InfDebug,
         MonVer,
         MonHw,
-        RxmRtcm
+        RxmRtcm,
+        RxmPowerManagementRequest,
     }
 );
