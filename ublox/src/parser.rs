@@ -3,7 +3,9 @@ use alloc::vec::Vec;
 
 use crate::{
     error::ParserError,
-    ubx_packets::{match_packet, PacketRef, MAX_PAYLOAD_LEN, SYNC_CHAR_1, SYNC_CHAR_2},
+    ubx_packets::{
+        match_packet, ubx_checksum, PacketRef, MAX_PAYLOAD_LEN, SYNC_CHAR_1, SYNC_CHAR_2,
+    },
 };
 
 /// This trait represents an underlying buffer used for the Parser. We provide
@@ -514,6 +516,114 @@ impl<'a, T: UnderlyingBuffer> ParserIter<'a, T> {
     }
 }
 
+const UBX_HEADER_SIZE: usize = 6;
+const UBX_FIELDS_SIZE: usize = UBX_HEADER_SIZE + 2;
+
+/// Find UBX sync bytes in byte slice
+///
+/// # Arguments
+///
+/// * `data` - A byte slice that should be parsed for UBX sync bytes
+///
+/// # Result
+///
+/// Returns the position in the slice where the first sync byte was found. Returns ParserError if
+/// an error occurred.
+///
+pub fn find_sync_position(data: &[u8]) -> Result<usize, (ParserError, usize)> {
+    if data.len() < 2 {
+        return Err((
+            ParserError::MoreDataRequired {
+                size: UBX_FIELDS_SIZE,
+            },
+            0,
+        ));
+    }
+    let end = data.len() - 1;
+    for i in 0..end {
+        if data[i] == SYNC_CHAR_1 && data[i + 1] == SYNC_CHAR_2 {
+            return Ok(i);
+        }
+    }
+    // If the last byte matches sync character 1, do not report that byte as consumed
+    let used = if data[end] == SYNC_CHAR_1 {
+        end
+    } else {
+        data.len()
+    };
+    Err((ParserError::SyncNotFound, used))
+}
+
+/// Parse UBX package from byte slice
+///
+/// # Arguments
+///
+/// * `data` - A byte slice that should be parsed for UBX packet
+///
+/// # Result
+///
+/// Returns a tuple with the result of the operation and the number of consumed bytes.
+///
+pub fn parse_slice(data: &[u8]) -> (Result<PacketRef, ParserError>, usize) {
+    // Find the start of the frame
+    let start_position = match find_sync_position(data) {
+        Ok(position) => position,
+        Err((error, used)) => {
+            return match error {
+                ParserError::SyncNotFound => (Err(error), used),
+                _ => (Err(error), 0),
+            };
+        }
+    };
+    // Cut out the frame
+    let frame = &data[start_position..];
+    // | SYNC 1 | SYNC 2 | CLASS | IDENTIFIER | LENGTH 1 | LENGTH 2 | .. | CHECKSUM 1 | CHECKSUM 2 |
+    if frame.len() < UBX_HEADER_SIZE {
+        return (
+            Err(ParserError::MoreDataRequired {
+                size: UBX_FIELDS_SIZE,
+            }),
+            start_position,
+        );
+    }
+    let payload_length = usize::from(u16::from_le_bytes([frame[4], frame[5]]));
+    let total_frame_length = payload_length + UBX_FIELDS_SIZE;
+    if frame.len() < total_frame_length {
+        return (
+            Err(ParserError::MoreDataRequired {
+                size: total_frame_length,
+            }),
+            start_position,
+        );
+    }
+    // Calculate and compare checksum
+    let consumed_bytes = start_position + total_frame_length;
+    let calculated_checksum = ubx_checksum(&frame[2..UBX_HEADER_SIZE + payload_length]);
+    let calculated_checksum = u16::from_le_bytes([calculated_checksum.0, calculated_checksum.1]);
+    let checksum_offset = payload_length + UBX_HEADER_SIZE;
+    let message_checksum = u16::from_le_bytes([frame[checksum_offset], frame[checksum_offset + 1]]);
+    println!(
+        "Checksum {:04x} == {:04x}",
+        calculated_checksum, message_checksum
+    );
+    if calculated_checksum != message_checksum {
+        return (
+            Err(ParserError::InvalidChecksum {
+                expect: message_checksum,
+                got: calculated_checksum,
+            }),
+            consumed_bytes,
+        );
+    }
+    let message_class = frame[2];
+    let message_identifier = frame[3];
+    let payload = &frame[UBX_HEADER_SIZE..UBX_HEADER_SIZE + payload_length];
+    match match_packet(message_class, message_identifier, payload) {
+        Ok(packet) => (Ok(packet), consumed_bytes),
+        Err(error) => (Err(error), consumed_bytes),
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -986,6 +1096,129 @@ mod test {
             }
         }
         assert!(it.next().is_none());
+    }
+
+    #[test]
+    fn slice_parse_short() {
+        if let (Err(error), consumed) = parse_slice(&[]) {
+            assert_eq!(error, ParserError::MoreDataRequired { size: 8 });
+            assert_eq!(consumed, 0);
+        } else {
+            assert!(false);
+        }
+        if let (Err(error), consumed) = parse_slice(&[0x00]) {
+            assert_eq!(error, ParserError::MoreDataRequired { size: 8 });
+            assert_eq!(consumed, 0);
+        } else {
+            assert!(false);
+        }
+        if let (Err(error), consumed) = parse_slice(&[0x00, 0x00]) {
+            assert_eq!(error, ParserError::SyncNotFound);
+            assert_eq!(consumed, 2);
+        } else {
+            assert!(false);
+        }
+        if let (Err(error), consumed) = parse_slice(&[0x00, SYNC_CHAR_1]) {
+            assert_eq!(error, ParserError::SyncNotFound);
+            assert_eq!(consumed, 1);
+        } else {
+            assert!(false);
+        }
+        if let (Err(error), consumed) =
+            parse_slice(&[0x00, SYNC_CHAR_2, SYNC_CHAR_1, 0x00, 0x00, 0x00, 0x00, 0x00])
+        {
+            assert_eq!(error, ParserError::SyncNotFound);
+            assert_eq!(consumed, 8);
+        } else {
+            assert!(false);
+        }
+        if let (Err(error), consumed) =
+            parse_slice(&[0x00, 0x00, SYNC_CHAR_1, SYNC_CHAR_2, 0x00, 0x00, 0x00])
+        {
+            assert_eq!(error, ParserError::MoreDataRequired { size: 8 });
+            assert_eq!(consumed, 2);
+        } else {
+            assert!(false);
+        }
+        if let (Err(error), consumed) =
+            parse_slice(&[0x00, SYNC_CHAR_1, SYNC_CHAR_2, 0x00, 0x00, 0x00, 0x00])
+        {
+            assert_eq!(error, ParserError::MoreDataRequired { size: 8 });
+            assert_eq!(consumed, 1);
+        } else {
+            assert!(false);
+        }
+        if let (Err(error), consumed) =
+            parse_slice(&[0x00, SYNC_CHAR_1, SYNC_CHAR_2, 0x00, 0x00, 0x00, 0x01])
+        {
+            assert_eq!(error, ParserError::MoreDataRequired { size: 264 });
+            assert_eq!(consumed, 1);
+        } else {
+            assert!(false);
+        }
+    }
+
+    #[test]
+    fn slice_parse() {
+        if let (Ok(packet), consumed) = parse_slice(&[
+            0x00,
+            SYNC_CHAR_1,
+            SYNC_CHAR_2,
+            0x01,
+            0x22,
+            0x00,
+            0x00,
+            0x23,
+            0x6a,
+        ]) {
+            match packet {
+                PacketRef::Unknown(packet) => {
+                    assert_eq!(packet.class, 0x01);
+                    assert_eq!(packet.msg_id, 0x22);
+                    assert_eq!(packet.payload.len(), 0);
+                }
+                _ => {
+                    assert!(false);
+                }
+            }
+            assert_eq!(consumed, 9);
+        } else {
+            assert!(false);
+        }
+        if let (Ok(packet), consumed) = parse_slice(&[
+            SYNC_CHAR_1,
+            SYNC_CHAR_2,
+            0x06,
+            0x09,
+            0x0c,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x1b,
+            0x8f,
+        ]) {
+            match packet {
+                PacketRef::ConfigurationOperation(packet) => {
+                    assert_eq!(packet.clear_mask(), ConfigurationSection::empty());
+                }
+                _ => {
+                    assert!(false);
+                }
+            }
+            assert_eq!(consumed, 20);
+        } else {
+            assert!(false);
+        }
     }
 }
 

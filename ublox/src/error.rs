@@ -38,6 +38,10 @@ pub enum ParserError {
     OutOfMemory {
         required_size: usize,
     },
+    MoreDataRequired {
+        size: usize,
+    },
+    SyncNotFound,
 }
 
 impl fmt::Display for ParserError {
@@ -65,6 +69,10 @@ impl fmt::Display for ParserError {
                 "Insufficient parser buffer size, required {} bytes",
                 required_size
             ),
+            ParserError::MoreDataRequired { size } => {
+                write!(f, "Insufficient buffer size, required {} bytes", size)
+            }
+            ParserError::SyncNotFound => write!(f, "Sync bytes not found in data"),
         }
     }
 }
