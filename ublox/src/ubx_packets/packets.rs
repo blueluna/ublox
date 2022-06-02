@@ -724,7 +724,75 @@ impl Default for OdoProfile {
     }
 }
 
-/// Information message conifg
+/// Configuration section
+#[ubx_extend_bitflags]
+#[ubx(from, into_raw, rest_reserved)]
+bitflags! {
+    #[derive(Default)]
+    pub struct ConfigurationSection: u32 {
+        /// Communications port settings
+        const IO_PORT = 0x0001;
+        /// Message configuration
+        const MESSAGES = 0x0002;
+        /// Information output configuration
+        const INFORMATION_OUTPUT = 0x0004;
+        /// Navigation configuration
+        const NAVIGATION = 0x0008;
+        /// Receiver manager configuration
+        const RECEIVER_MANAGER = 0x0010;
+        /// Sensor interface configuration
+        const SENSOR_INTERFACE = 0x0100;
+        /// Remote inventory configuration
+        const REMOTE_INVENTORY = 0x0200;
+        /// Antenna configuration
+        const ANTENNA = 0x0400;
+        /// Logging configuration
+        const LOGGING = 0x0800;
+        /// Frequency and time sync configuration
+        const FREQUENCY_AND_TIME_SYNC = 0x1000;
+    }
+}
+
+/// Configuration storage device
+#[ubx_extend_bitflags]
+#[ubx(from, into_raw, rest_reserved)]
+bitflags! {
+    #[derive(Default)]
+    pub struct ConfigurationStorageDevice: u8 {
+        /// Battery backed memory
+        const BATTERY_BACKED_MEMORY = 0x01;
+        /// Flash
+        const FLASH = 0x02;
+        /// EEPROM
+        const EEPROM = 0x04;
+        /// SPI Flash
+        const SPI_FLASH = 0x10;
+    }
+}
+
+/// Configuration clear, save, load message
+#[ubx_packet_recv_send]
+#[ubx(class = 0x06, id = 0x09, fixed_payload_len = 12)]
+struct ConfigurationOperation {
+    #[ubx(map_type = ConfigurationSection)]
+    clear_mask: u32,
+    #[ubx(map_type = ConfigurationSection)]
+    save_mask: u32,
+    #[ubx(map_type = ConfigurationSection)]
+    load_mask: u32,
+}
+
+impl ConfigurationOperationBuilder {
+    pub fn save(sections: ConfigurationSection) -> Self {
+        Self {
+            clear_mask: ConfigurationSection::empty(),
+            save_mask: sections,
+            load_mask: ConfigurationSection::empty(),
+        }
+    }
+}
+
+/// Information message configuration
 #[ubx_packet_recv_send]
 #[ubx(
     class = 0x06,
@@ -1818,7 +1886,7 @@ pub enum LowPowerMode {
 #[ubx_packet_recv_send]
 #[ubx(class = 0x06, id = 0x3b, fixed_payload_len = 44)]
 struct CfgExtendedPowerManagement {
-    /// Version, 0x00
+    /// Version
     version: u8,
     reserved1: u8,
     /// Maximum time to spend in acquisition state, in seconds.
@@ -1838,6 +1906,24 @@ struct CfgExtendedPowerManagement {
     /// Minimal search time in seconds
     minimal_acquisition_time: u16,
     reserved3: [u8; 20],
+}
+
+impl CfgExtendedPowerManagementBuilder {
+    pub fn simple_on_off(update_interval: u32) -> Self {
+        Self {
+            version: 1,
+            reserved1: 0,
+            max_startup_state_duration: 0,
+            reserved2: 0,
+            flags: CfgExtendedPowerManagementFlags::UPDATE_EPHEMERIS,
+            update_period: update_interval,
+            search_period: 10_000,
+            grid_offset: 0,
+            on_time: 2,
+            minimal_acquisition_time: 0,
+            reserved3: [0; 20],
+        }
+    }
 }
 
 #[ubx_extend_bitflags]
@@ -1947,7 +2033,7 @@ impl RxmPowerManagementRequestBuilder {
         };
         Self {
             duration: duration_ms,
-            flags: RxmPowerManagementRequestFlags::from(0),
+            flags: RxmPowerManagementRequestFlags::empty(),
         }
     }
 }
@@ -2160,12 +2246,14 @@ define_recv_packets!(
         AlpSrv,
         AckAck,
         AckNak,
+        ConfigurationOperation,
         CfgPrtI2c,
         CfgAnt,
         CfgPrtSpi,
         CfgPrtUart,
         CfgNav5,
         CfgPowerModeSetup,
+        CfgExtendedPowerManagement,
         CfgRxm,
         InfError,
         InfWarning,

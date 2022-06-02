@@ -1,6 +1,7 @@
 use chrono::prelude::*;
 use clap::{App, Arg};
 use std::convert::TryFrom;
+use std::io::Write;
 use std::time::Duration;
 use ublox::*;
 
@@ -51,12 +52,18 @@ impl Device {
     pub fn wait_for_ack<T: UbxPacketMeta>(&mut self) -> std::io::Result<()> {
         let mut found_packet = false;
         while !found_packet {
-            self.update(|packet| {
-                if let PacketRef::AckAck(ack) = packet {
+            self.update(|packet| match packet {
+                PacketRef::AckAck(ack) => {
                     println!("Ack {:02x} {:02x}", ack.class(), ack.msg_id());
                     if ack.class() == T::CLASS && ack.msg_id() == T::ID {
                         found_packet = true;
                     }
+                }
+                PacketRef::AckNak(nak) => {
+                    println!("Nak {:02x} {:02x}", nak.class(), nak.msg_id());
+                }
+                _ => {
+                    println!("Ack {:?}", packet);
                 }
             })?;
         }
@@ -116,6 +123,8 @@ fn main() {
     let port = serialport::open_with_settings(port, &s).unwrap();
     let mut device = Device::new(port);
 
+    let _ = device.write_all(&[0xff]);
+
     println!("Configure UART");
     // Configure the device to talk UBX
     device
@@ -136,20 +145,6 @@ fn main() {
         .unwrap();
     device.wait_for_ack::<CfgPrtUart>().unwrap();
 
-    /*
-    println!("Configure power mode");
-    // Enable power save mode
-    device
-        .write_all(
-            &CfgPowerModeSetupBuilder::setup_interval(
-                chrono::Duration::seconds(20),
-                chrono::Duration::seconds(10),
-            )
-            .into_packet_bytes(),
-        )
-        .unwrap();
-    device.wait_for_ack::<CfgPowerModeSetup>().unwrap();
-
     println!("Configure power save");
     // Enable power save mode
     device
@@ -162,18 +157,13 @@ fn main() {
         )
         .unwrap();
     device.wait_for_ack::<CfgRxm>().unwrap();
-    */
 
-    /*
-    println!("Configure power save duration");
-    // Configure power save duration
+    println!("Configure extended power management");
+    // Enable power save mode
     device
-        .write_all(
-            &RxmPowerManagementRequestBuilder::new(chrono::Duration::seconds(20))
-                .into_packet_bytes(),
-        )
+        .write_all(&CfgExtendedPowerManagementBuilder::simple_on_off(3_600_000).into_packet_bytes())
         .unwrap();
-    */
+    device.wait_for_ack::<CfgExtendedPowerManagement>().unwrap();
 
     println!("Enable navigation packet(s)");
     // Enable the NavPosVelTime packet
@@ -184,6 +174,15 @@ fn main() {
         )
         .unwrap();
     device.wait_for_ack::<CfgMsgAllPorts>().unwrap();
+
+    println!("Store some configuration");
+    device
+        .write_all(
+            &ConfigurationOperationBuilder::save(ConfigurationSection::RECEIVER_MANAGER)
+                .into_packet_bytes(),
+        )
+        .unwrap();
+    device.wait_for_ack::<ConfigurationOperation>().unwrap();
 
     // Send a packet request for the MonVer packet
     device
