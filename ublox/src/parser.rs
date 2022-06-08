@@ -602,10 +602,6 @@ pub fn parse_slice(data: &[u8]) -> (Result<PacketRef, ParserError>, usize) {
     let calculated_checksum = u16::from_le_bytes([calculated_checksum.0, calculated_checksum.1]);
     let checksum_offset = payload_length + UBX_HEADER_SIZE;
     let message_checksum = u16::from_le_bytes([frame[checksum_offset], frame[checksum_offset + 1]]);
-    println!(
-        "Checksum {:04x} == {:04x}",
-        calculated_checksum, message_checksum
-    );
     if calculated_checksum != message_checksum {
         return (
             Err(ParserError::InvalidChecksum {
