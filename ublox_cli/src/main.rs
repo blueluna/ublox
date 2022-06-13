@@ -136,7 +136,7 @@ fn main() {
                 mode: UartMode::new(DataBits::Eight, Parity::None, StopBits::One),
                 baud_rate: 9600,
                 in_proto_mask: InProtoMask::NMEA | InProtoMask::UBOX,
-                out_proto_mask: OutProtoMask::UBOX,
+                out_proto_mask: OutProtoMask::NMEA | OutProtoMask::UBOX,
                 flags: 0,
                 reserved5: 0,
             }
@@ -178,8 +178,7 @@ fn main() {
     println!("Store some configuration");
     device
         .write_all(
-            &ConfigurationOperationBuilder::save(ConfigurationSection::RECEIVER_MANAGER)
-                .into_packet_bytes(),
+            &ConfigurationOperationBuilder::save(ConfigurationSection::all()).into_packet_bytes(),
         )
         .unwrap();
     device.wait_for_ack::<ConfigurationOperation>().unwrap();

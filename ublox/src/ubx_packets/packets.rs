@@ -838,7 +838,7 @@ bitflags! {
     max_payload_len = 1240,
     flags = "default_for_builder"
 )]
-struct InfError{
+struct InfError {
     #[ubx(map_type = Option<&str>,
         may_fail,
         is_valid = inf::is_valid,
@@ -854,7 +854,7 @@ struct InfError{
     max_payload_len = 1240,
     flags = "default_for_builder"
 )]
-struct InfNotice{
+struct InfNotice {
     #[ubx(map_type = Option<&str>,
         may_fail,
         is_valid = inf::is_valid,
@@ -870,13 +870,13 @@ struct InfNotice{
     max_payload_len = 1240,
     flags = "default_for_builder"
 )]
-struct InfTest{
+struct InfTest {
     #[ubx(map_type = Option<&str>,
         may_fail,
         is_valid = inf::is_valid,
         from = inf::convert_to_str,
         get_as_ref)]
-    message: [u8; 0]
+    message: [u8; 0],
 }
 
 #[ubx_packet_recv]
@@ -886,13 +886,13 @@ struct InfTest{
     max_payload_len = 1240,
     flags = "default_for_builder"
 )]
-struct InfWarning{
+struct InfWarning {
     #[ubx(map_type = Option<&str>,
         may_fail,
         is_valid = inf::is_valid,
         from = inf::convert_to_str,
         get_as_ref)]
-    message: [u8; 0]
+    message: [u8; 0],
 }
 
 #[ubx_packet_recv]
@@ -902,13 +902,13 @@ struct InfWarning{
     max_payload_len = 1240,
     flags = "default_for_builder"
 )]
-struct InfDebug{
+struct InfDebug {
     #[ubx(map_type = Option<&str>,
         may_fail,
         is_valid = inf::is_valid,
         from = inf::convert_to_str,
         get_as_ref)]
-    message: [u8; 0]
+    message: [u8; 0],
 }
 
 mod inf {
@@ -1919,7 +1919,7 @@ impl CfgExtendedPowerManagementBuilder {
             update_period: update_interval,
             search_period: 10_000,
             grid_offset: 0,
-            on_time: 2,
+            on_time: 1,
             minimal_acquisition_time: 0,
             reserved3: [0; 20],
         }
